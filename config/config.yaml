@@ -1,0 +1,26 @@
+bbox: [-2.5, 34.0, 9.0, 37.2]
+resolution: 0.1
+years: [2012, 2025]
+season: {start: "06-01", end: "10-31"}
+warmup_start: "01-01"
+data_dir: "data"
+firms:
+  source: VIIRS_SNPP_SP
+  types: [0]
+  confidence: [n, h]
+  day_range: 5
+sampling:
+  k_negatives: 3
+  temporal_buffer_days: 3
+  max_positives_per_cell_season: 10
+  random_seed: 42
+universe:
+  min_fire_days: 2
+  min_distinct_years: 2
+weather:
+  chunk_size: 150
+  sleep_seconds: 6
+splits:
+  train: [2012, 2021]
+  val: [2022, 2023]
+  test: [2024, 2025]
