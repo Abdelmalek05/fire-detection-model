@@ -17,8 +17,38 @@ def test_loads_expected_values(monkeypatch):
     assert cfg.temporal_buffer_days == 3
     assert cfg.weather_chunk_size == 150
     assert cfg.map_key == "testkey123"
-    assert cfg.years == list(range(2012, 2026))
-    assert cfg.splits["train"] == [2012, 2021]
+    # FIRMS day_range max is 5 (the API rejects 10), and the VIIRS SNPP archive
+    # starts 2012-01-20, so no configured year may precede it.
+    assert cfg.year_start >= 2012
+    assert cfg.year_end >= cfg.year_start
+    assert cfg.years == list(range(cfg.year_start, cfg.year_end + 1))
+
+
+def test_splits_partition_the_configured_years_exactly(monkeypatch):
+    """Scope changes (e.g. 14 years -> 5) must keep splits consistent.
+
+    Asserting the invariant rather than hardcoded years means this catches a
+    real misconfiguration - a year with no split, or a year in two splits -
+    without breaking every time the scope is narrowed or widened.
+    """
+    monkeypatch.setenv("FIRMS_MAP_KEY", "testkey123")
+    cfg = load_config(Path("config/config.yaml"))
+
+    covered = []
+    for name in ("train", "val", "test"):
+        lo, hi = cfg.splits[name]
+        assert lo <= hi, f"{name} split is inverted"
+        covered.extend(range(lo, hi + 1))
+
+    assert sorted(covered) == cfg.years, "splits must cover every year exactly once"
+    # Test years must come after training years - never train on the future.
+    assert max(range(*_bounds(cfg.splits["train"]))) < min(
+        range(*_bounds(cfg.splits["test"]))
+    )
+
+
+def _bounds(pair):
+    return pair[0], pair[1] + 1
 
 def test_missing_key_raises(monkeypatch):
     # Neutralise .env loading so the test verifies load_config's behaviour,

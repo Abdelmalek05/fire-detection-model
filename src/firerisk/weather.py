@@ -67,6 +67,18 @@ def _cache_path(cfg, year, chunk_idx):
     )
 
 
+class RateLimitExceeded(RuntimeError):
+    """Open-Meteo quota exhausted for a window longer than we should sleep on.
+
+    Open-Meteo enforces minutely, hourly and daily quotas, weighted by
+    locations x days - so one 150-cell, 304-day request costs far more than
+    one "call". A minutely block clears in a minute and is worth waiting out;
+    an hourly or daily block is not, and blindly sleeping on it burns the
+    retry budget and reports a useless error. Raise instead, so the caller
+    can stop, report honestly, and resume later from cache.
+    """
+
+
 def fetch_year_chunk(cfg, cells, year, chunk_idx, session=None):
     path = _cache_path(cfg, year, chunk_idx)
     if path.exists():
@@ -82,21 +94,37 @@ def fetch_year_chunk(cfg, cells, year, chunk_idx, session=None):
     }
     get = (session or requests).get
     last = None
+    minutely_waits = 0
     for attempt in range(5):
         try:
             r = get(BASE, params=params, timeout=300)
             if r.status_code == 429:
-                time.sleep(60)
-                continue
+                reason = ""
+                try:
+                    reason = r.json().get("reason", "")
+                except ValueError:
+                    reason = r.text[:200]
+                if "inutely" in reason and minutely_waits < 5:
+                    minutely_waits += 1
+                    time.sleep(60)
+                    continue
+                raise RateLimitExceeded(
+                    f"year={year} chunk={chunk_idx}: {reason or 'HTTP 429'}"
+                )
             r.raise_for_status()
             df = parse_response(r.json(), cells)
             df.to_parquet(path, index=False)
             time.sleep(cfg.weather_sleep_seconds)
             return df
+        except RateLimitExceeded:
+            raise
         except Exception as exc:  # noqa: BLE001
             last = exc
             time.sleep(10 * (attempt + 1))
-    raise RuntimeError(f"Open-Meteo fetch failed year={year} chunk={chunk_idx}: {last}")
+    raise RuntimeError(
+        f"Open-Meteo fetch failed year={year} chunk={chunk_idx}: "
+        f"{last if last is not None else 'retries exhausted with no exception'}"
+    )
 
 
 def load_weather(cfg, universe, session=None):
