@@ -1,10 +1,16 @@
 bbox: [-2.5, 34.0, 9.0, 37.2]
 resolution: 0.1
-# v1 scope: 5 seasons. Open-Meteo's free tier bills by locations x days, so the
-# full 2012-2025 range is not fetchable in reasonable time. FIRMS data for all
-# 14 years is already downloaded and cached, so widening this later and
-# re-running backfills without re-fetching anything already on disk.
-years: [2021, 2025]
+# v2 scope: all 14 seasons, the full VIIRS SNPP archive. FIRMS for every year
+# is already cached, so widening the range costs only the weather fetch.
+#
+# Note for anyone narrowing or widening this again: the universe is derived
+# from the configured years (638 cells at 2021-2025, 1423 at 2012-2025), and
+# weather chunks are indexed by *position* within it. New cells interleave, so
+# chunk_000 of a 5-year universe overlaps a 14-year one by only 40/150 cells.
+# Weather fetched under a different scope must not be reused - clear
+# data/raw/weather when changing this, or the fetch will skip chunks whose
+# names no longer mean what they did.
+years: [2012, 2025]
 season: {start: "06-01", end: "10-31"}
 warmup_start: "01-01"
 data_dir: "data"
@@ -27,6 +33,6 @@ weather:
 # Split by year, never randomly: one fire burns for several days, so a random
 # split would scatter the same fire across train and test.
 splits:
-  train: [2021, 2023]
+  train: [2012, 2023]
   val: [2024, 2024]
   test: [2025, 2025]

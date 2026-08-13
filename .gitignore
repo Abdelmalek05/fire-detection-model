@@ -1,2 +1,14 @@
 docs/
 .env
+.claude/
+
+# Fetched + derived data (regenerable from the APIs; large)
+data/
+
+# Workflow scratch (task briefs, reports, review packages, progress ledger)
+.superpowers/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
