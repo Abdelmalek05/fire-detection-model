@@ -22,6 +22,14 @@ BASE_FEATURES = [
     "ffmc", "dmc", "dc", "isi", "bui", "fwi",
 ]
 
+# Fuel depletion: burned ground does not reburn for months. Measured worth
+# +20% PR-AUC over BASE_FEATURES alone - the best single feature found.
+FUEL_FEATURES = ["days_since_last_fire"]
+
+MODEL_FEATURES = BASE_FEATURES + FUEL_FEATURES
+
+NEVER_BURNED = 9999.0  # sentinel: no qualifying fire before this row
+
 
 def _days_since_rain(precip):
     """Days since the last wetting rain (>=1mm). NaN until the first one."""
@@ -59,6 +67,43 @@ def add_rolling(weather):
         .transform(lambda s: pd.Series(_days_since_rain(s.to_numpy()), index=s.index))
     )
     return df
+
+
+def add_days_since_last_fire(samples, qual, buffer_days):
+    """Days since this cell last burned, ignoring fires newer than the
+    sampling buffer.
+
+    THE LAG IS NOT OPTIONAL. Negatives are sampled at least buffer_days+1
+    away from any fire, while a positive inside a multi-day fire sits 1-3
+    days after the previous one. Counting those recent fires makes every
+    value below buffer_days+1 exclusively positive - measured on the real
+    dataset: 8,365 rows, 100% positive, 27.6% of ALL positives, classified
+    by a rule that is our sampling design and not fire behaviour. It inflated
+    PR-AUC from 0.458 to 0.688 on pure artefact.
+
+    Looking back only to fires at least buffer_days+1 old restores symmetry:
+    both classes then see the same feasible range, and what survives is real
+    fuel depletion - burned ground does not reburn for months. Worth +20%.
+
+    See tests/test_features_fuel.py, which fails if the lag is removed.
+    """
+    lag = np.timedelta64(buffer_days + 1, "D")
+    fire_days = (
+        qual.groupby("cell_id")["date"]
+        .apply(lambda s: np.sort(s.unique()))
+        .to_dict()
+    )
+    out = np.full(len(samples), np.nan)
+    for i, (cell, day) in enumerate(
+        zip(samples.cell_id.values, samples.date.values)
+    ):
+        days = fire_days.get(cell)
+        if days is None:
+            continue
+        j = np.searchsorted(days, day - lag)
+        if j > 0:
+            out[i] = (day - days[j - 1]) / np.timedelta64(1, "D")
+    return pd.Series(out, index=samples.index).fillna(NEVER_BURNED)
 
 
 def assign_split(year, splits):

@@ -6,6 +6,33 @@ satellite fire detections and **Open-Meteo** historical weather.
 Replaces the 244-row UCI "Algerian Forest Fires" dataset (2 regions, one summer)
 with a dataset built from live APIs across whole fire seasons.
 
+## Structure
+
+```
+src/firerisk/          pipeline (ingest -> sampling -> features)
+  modeling/            evaluation protocol, training, calibration
+scripts/               operational entry points
+data/sample/           3.6k committed rows - explore without an API key
+artifacts/             trained model, threshold, metrics
+docs/                  design spec and implementation plan
+tests/                 82 tests, none touching the network
+```
+
+## Results
+
+| | PR-AUC | ROC-AUC | Precision | Recall |
+|---|---|---|---|---|
+| Weather features only | 0.458 | 0.734 | — | — |
+| **+ fuel depletion, tuned** | **0.559** | 0.776 | 0.386 | **0.810** |
+
+5-fold CV grouped by year, threshold fitted on an inner held-out year.
+Against a 24.9% sampled base rate, that is a 2.2x lift.
+
+Boosted trees, bagged trees and a neural network all land within 0.01 of each
+other, which is the signature of an information ceiling rather than an
+algorithmic one. The remaining headroom is in data - vegetation state (NDVI)
+above all - not in model choice.
+
 ## Setup
 
 ```powershell
@@ -29,6 +56,26 @@ Stages can be run individually: `firms`, `universe`, `samples`, `weather`,
 nothing and an interrupted run resumes exactly where it stopped.
 
 Output: `data/processed/dataset.parquet`.
+
+### Modelling
+
+```powershell
+python scripts/run_experiment.py compare      # model families, honest CV
+python scripts/run_experiment.py thresholds   # operating-point table
+python scripts/run_experiment.py train        # fit + persist artifacts
+```
+
+Two things the model cannot be served without, both saved beside it in
+`artifacts/`:
+
+* **The threshold.** Defaults to whatever meets an 80% recall target (0.18),
+  not 0.5. At 0.5 this model misses four fires in five.
+* **The base-rate correction.** Training data is 1:3 by construction; real
+  fire-days are ~1 in 100 cell-days in season. Raw probabilities are on the
+  sampled scale and read as alarming everywhere until corrected.
+
+Risk is reported as bands relative to the base rate ("3x a typical day here"),
+not as a yes/no alarm - the same shape as published fire-danger ratings.
 
 ### About the weather fetch
 

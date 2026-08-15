@@ -1,0 +1,79 @@
+{
+  "features": [
+    "temp_max",
+    "temp_min",
+    "temp_mean",
+    "rh_min",
+    "rh_mean",
+    "wind_max",
+    "wind_mean",
+    "precip_sum",
+    "vpd_max",
+    "precip_7d",
+    "precip_30d",
+    "days_since_rain_1mm",
+    "temp_max_7d_mean",
+    "rh_min_7d_mean",
+    "ffmc",
+    "dmc",
+    "dc",
+    "isi",
+    "bui",
+    "fwi",
+    "days_since_last_fire"
+  ],
+  "n_rows": 121869,
+  "years": [
+    2012,
+    2025
+  ],
+  "sampled_base_rate": 0.24904610688526205,
+  "real_base_rate": 0.009957461551029407,
+  "threshold": 0.18000000000000002,
+  "target_recall": 0.8,
+  "risk_multiples": [
+    [
+      0,
+      1,
+      "Low"
+    ],
+    [
+      1,
+      3,
+      "Moderate"
+    ],
+    [
+      3,
+      8,
+      "High"
+    ],
+    [
+      8,
+      null,
+      "Extreme"
+    ]
+  ],
+  "oof_pr_auc": 0.5580219062826224,
+  "oof_roc_auc": 0.778997254446454,
+  "at_operating_point": {
+    "precision": 0.38643833246843107,
+    "recall": 0.8096603077328589,
+    "f1": 0.5231738732409359
+  },
+  "params": {
+    "objective": "binary",
+    "n_estimators": 1275,
+    "learning_rate": 0.0146,
+    "num_leaves": 29,
+    "min_child_samples": 197,
+    "subsample": 0.5998,
+    "subsample_freq": 1,
+    "colsample_bytree": 0.7671,
+    "reg_alpha": 0.0667,
+    "reg_lambda": 3.2759,
+    "n_jobs": -1,
+    "verbose": -1,
+    "random_state": 42
+  },
+  "protocol": "5-fold CV grouped by year; threshold from a recall target on out-of-fold predictions; probabilities require base-rate correction before display"
+}

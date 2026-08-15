@@ -1,9 +1,18 @@
-docs/
 .env
 .claude/
 
-# Fetched + derived data (regenerable from the APIs; large)
-data/
+# Fetched + derived data (regenerable from the APIs; large).
+# data/sample/ is committed so a fresh clone has something real to open
+# without an API key and hours of downloading.
+#
+# NOTE: this must be `data/*`, not `data/`. Git does not descend into an
+# excluded DIRECTORY, so a later `!data/sample/` negation would never be
+# reached and the sample would stay invisible.
+data/*
+!data/sample/
+
+# Large exports dropped at the repo root
+/dataset.csv
 
 # Workflow scratch (task briefs, reports, review packages, progress ledger)
 .superpowers/
@@ -12,3 +21,4 @@ data/
 __pycache__/
 *.pyc
 .pytest_cache/
+CLAUDE.md
