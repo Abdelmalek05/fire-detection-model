@@ -218,3 +218,44 @@ score identically — with no error anywhere.
    test metrics describe fire-prone land rather than arbitrary terrain.
 5. Ignition cause is absent. Most Algerian wildfires are human-caused; this models
    fire-conducive *conditions*, not human behaviour.
+
+---
+
+## Licence and attribution
+
+The **code** in this repository is MIT (see [LICENSE](../LICENSE)). The **dataset**
+is released under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/),
+matching the licence of its weather source.
+
+### Attribution
+
+> Weather data by [Open-Meteo.com](https://open-meteo.com/), licensed under
+> [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+>
+> We acknowledge the use of imagery from the NASA LANCE FIRMS
+> (https://earthdata.nasa.gov/firms), part of the NASA Earth Science Data and
+> Information System (ESDIS).
+
+Open-Meteo's data is CC BY 4.0, which permits redistribution and adaptation with
+credit, a link to the licence, and a statement of changes. Their free API tier is
+separately limited to non-commercial use — that condition governs *making the API
+calls*, not the resulting data. NASA promotes full and open sharing of FIRMS data
+with no period of exclusive access; the citation above is requested rather than
+required.
+
+### Changes made to the source data
+
+CC BY 4.0 requires stating that the material was modified. It was:
+
+- FIRMS 375 m detection pixels are filtered to `type == 0` and collapsed to
+  (0.1° cell, day) events. Confidence filters differ deliberately between
+  positives (`n`/`h`) and exclusions (all, including `l`).
+- Open-Meteo hourly ERA5-Land values are reduced to daily aggregates, extended
+  with backward-looking rolling windows, and used to compute Canadian FWI
+  components.
+- Rows are a **sampled panel**, not a complete grid: every qualifying positive
+  plus three matched negatives per positive, drawn from the same cell on
+  different days.
+
+Neither the raw detections nor the raw reanalysis are redistributed here.
+Neither NASA nor Open-Meteo endorses this work.

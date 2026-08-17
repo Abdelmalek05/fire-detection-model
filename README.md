@@ -295,4 +295,6 @@ gap the ablations above could not close.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Code: MIT — see [LICENSE](LICENSE).
+Dataset: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — see
+[attribution](docs/DATASET.md#licence-and-attribution).
