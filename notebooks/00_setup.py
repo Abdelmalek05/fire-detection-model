@@ -25,10 +25,9 @@ ROOT = project_root()
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
-from firerisk import firms  # noqa: E402
 from firerisk.config import load_config  # noqa: E402
 from firerisk.features import (  # noqa: E402
-    BASE_FEATURES, MODEL_FEATURES, add_days_since_last_fire,
+    BASE_FEATURES, FUEL_FEATURES, MODEL_FEATURES,
 )
 
 import dataclasses  # noqa: E402
@@ -46,29 +45,23 @@ FEATURES = MODEL_FEATURES
 
 
 def load_dataset(with_fuel=True):
-    """The built dataset, plus the fuel feature the pipeline does not store.
-
-    days_since_last_fire is derived here rather than baked into the parquet
-    because it depends on the sampling buffer - storing it would freeze that
-    choice into the data file.
-    """
+    """The built dataset. days_since_last_fire is a stored column - the
+    pipeline derives it in `assemble`, so nothing here recomputes it."""
     import pandas as pd
 
     d = pd.read_parquet(ROOT / "data" / "processed" / "dataset.parquet")
-    if with_fuel:
-        det = firms.load_detections(CFG)
-        if det.empty:
-            raise RuntimeError(
-                f"no FIRMS detections under {CFG.data_dir}. Without them the "
-                "fuel feature degrades to a constant and every model scores "
-                "the same - fail loudly rather than report that."
-            )
-        qual = firms.qualifying(det, CFG)
-        d["days_since_last_fire"] = add_days_since_last_fire(
-            d, qual, CFG.temporal_buffer_days
+    if not with_fuel:
+        return d.drop(columns=FUEL_FEATURES, errors="ignore")
+
+    missing = [f for f in FUEL_FEATURES if f not in d.columns]
+    if missing:
+        raise RuntimeError(
+            f"{missing} missing from dataset.parquet - it predates the change "
+            "that stores the fuel feature. Rebuild with: "
+            "python -m firerisk.build features"
         )
-        if d["days_since_last_fire"].nunique() < 10:
-            raise RuntimeError(
-                "days_since_last_fire is near-constant - it carries no signal."
-            )
+    if d["days_since_last_fire"].nunique() < 10:
+        raise RuntimeError(
+            "days_since_last_fire is near-constant - it carries no signal."
+        )
     return d

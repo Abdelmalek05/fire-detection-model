@@ -73,13 +73,34 @@ def main(argv=None):
         samples = pd.read_parquet(samples_path)
         wx = _load_cached_weather(cfg, uni)
         wx = features.add_rolling(wx)
-        dataset = features.assemble(samples, wx, uni, cfg)
+        dataset = features.assemble(samples, wx, uni, cfg, qual)
+        if dataset["days_since_last_fire"].nunique() < 10:
+            raise SystemExit(
+                "days_since_last_fire is near-constant. FIRMS detections are "
+                "missing or empty - refusing to write a dataset whose best "
+                "feature carries no signal."
+            )
         out = processed / "dataset.parquet"
-        dataset.to_parquet(out, index=False)
+        _write_dataset(dataset, out, cfg.temporal_buffer_days)
         print(f"      dataset rows: {len(dataset)}  ->  {out}")
         print(dataset.groupby(["split", "label"]).size().to_string())
 
     return 0
+
+
+def _write_dataset(df, path, buffer_days):
+    """Write the parquet, recording the sampling buffer in its metadata.
+
+    days_since_last_fire is derived from that buffer, so storing it makes a
+    mismatch detectable rather than silent.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    table = pa.Table.from_pandas(df, preserve_index=False)
+    meta = dict(table.schema.metadata or {})
+    meta[b"temporal_buffer_days"] = str(buffer_days).encode()
+    pq.write_table(table.replace_schema_metadata(meta), path)
 
 
 def _load_cached_weather(cfg, universe):

@@ -74,13 +74,51 @@ def test_assemble_joins_and_drops_unmatched():
 
     class Cfg:
         splits = {"train": [2021, 2023], "val": [2024, 2024], "test": [2025, 2025]}
+        temporal_buffer_days = 3
 
-    out = assemble(samples, weather, universe, Cfg())
+    qual = pd.DataFrame({
+        "cell_id": ["367_41"],
+        "date": pd.to_datetime(["2021-01-10"]),
+    })
+
+    out = assemble(samples, weather, universe, Cfg(), qual)
     assert len(out) == 2                      # cell 999_99 has no weather -> dropped
     assert set(out.cell_id) == {"367_41"}
     assert "fwi" in out.columns and "ffmc" in out.columns
     assert out.split.unique().tolist() == ["train"]
     assert out.lat.iloc[0] == 36.7
+
+
+def test_assemble_stores_the_fuel_feature():
+    """days_since_last_fire is a stored column, not something every consumer
+    recomputes - a Kaggle user reading the CSV cannot derive it."""
+    from firerisk.features import MODEL_FEATURES
+
+    samples = pd.DataFrame({
+        "cell_id": ["367_41", "367_41"],
+        "date": pd.to_datetime(["2021-02-05", "2021-02-06"]),
+        "label": [1, 0],
+        "sample_kind": ["positive", "matched_negative"],
+        "n_detections": [3, 0],
+        "max_frp": [12.0, np.nan],
+    })
+    weather = add_rolling(_w([0.0] * 40))
+    universe = pd.DataFrame({"cell_id": ["367_41"], "lat": [36.7], "lon": [4.1]})
+
+    class Cfg:
+        splits = {"train": [2021, 2023], "val": [2024, 2024], "test": [2025, 2025]}
+        temporal_buffer_days = 3
+
+    qual = pd.DataFrame({
+        "cell_id": ["367_41"],
+        "date": pd.to_datetime(["2021-01-10"]),
+    })
+
+    out = assemble(samples, weather, universe, Cfg(), qual)
+    assert "days_since_last_fire" in out.columns
+    assert all(f in out.columns for f in MODEL_FEATURES)
+    # 2021-02-05 is 26 days after the 2021-01-10 fire, well outside the lag
+    assert out.days_since_last_fire.iloc[0] == 26.0
 
 
 def test_assemble_excludes_coordinates_from_feature_list():

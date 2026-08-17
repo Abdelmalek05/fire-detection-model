@@ -113,17 +113,27 @@ def assign_split(year, splits):
     return "unassigned"
 
 
-def assemble(samples, weather_feat, universe, cfg):
+def assemble(samples, weather_feat, universe, cfg, qual):
+    """Join samples to weather, derive the fuel feature, order the columns.
+
+    days_since_last_fire is STORED, not left to each consumer to recompute.
+    It derives from cfg.temporal_buffer_days, so the caller must pass the same
+    buffer the samples were drawn under - build.py records it in the parquet
+    metadata so a mismatch is detectable.
+    """
     weather_feat = compute_series(weather_feat)
     merged = samples.merge(weather_feat, on=["cell_id", "date"], how="inner")
     merged = merged.merge(universe[["cell_id", "lat", "lon"]], on="cell_id", how="left")
     merged["year"] = merged["date"].dt.year
     merged["doy"] = merged["date"].dt.dayofyear
     merged["split"] = merged["year"].map(lambda y: assign_split(y, cfg.splits))
+    merged["days_since_last_fire"] = add_days_since_last_fire(
+        merged, qual, cfg.temporal_buffer_days
+    )
     cols = (
         ["cell_id", "lat", "lon", "date", "year", "doy", "label", "sample_kind",
          "n_detections", "max_frp"]
-        + BASE_FEATURES
+        + MODEL_FEATURES
         + ["split"]
     )
     return merged[cols].sort_values(["cell_id", "date"]).reset_index(drop=True)

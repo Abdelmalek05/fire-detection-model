@@ -178,9 +178,10 @@ are all provably empty in this design. Only time-varying information can help.
 ### Features (21)
 
 Nine same-day weather variables, five antecedent-dryness windows, the six Canadian FWI
-components, and one fuel-depletion feature. Weather is fetched from January 1 rather than
-the season start so the FWI moisture codes have their antecedent history — the Drought
-Code alone has a ~50-day memory.
+components, and one fuel-depletion feature — all 21 stored as columns, alongside 11 more
+for keys, labels and bookkeeping. Weather is fetched from January 1 rather than the season
+start so the FWI moisture codes have their antecedent history — the Drought Code alone has
+a ~50-day memory.
 
 Full column reference — types, units, ranges, means, and the per-year base-rate
 instability that makes val and test incomparable — in
@@ -198,7 +199,8 @@ notebooks/        all modelling
   03              threshold calibration, base-rate correction, final artifact
 scripts/          operational entry points
 artifacts/        model.joblib + metrics.json (threshold and base rates live here)
-data/sample/      3,600 committed rows — explore without an API key
+data/sample/      3,598 committed rows — explore without an API key
+                  regenerate with scripts/make_sample.py
 docs/             dataset dictionary
 tests/            68 tests, none touching the network
 ```

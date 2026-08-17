@@ -16,8 +16,8 @@ d.to_csv("dataset.csv", index=False)   # if you want it in Excel
 | | |
 |---|---|
 | Rows | **121,869** |
-| Columns | **31** |
-| File size | 9.6 MB on disk (47 MB in memory) |
+| Columns | **32** (21 model features + 11 keys, labels and bookkeeping) |
+| File size | 9.8 MB on disk (~48 MB in memory) |
 | Grain | one **(cell, date)** pair — unique, 0 duplicates |
 | Cells | 1,423 distinct 0.1° squares (~11 km) |
 | Dates | 2012-06-01 → 2025-10-31, season only (Jun 1 – Oct 31), 2,142 distinct days |
@@ -110,6 +110,26 @@ a Jan 1 reset that lets DC accumulate uninterrupted through a rainless summer.
 They are internally consistent and usable as features; **do not compare them to
 published FWI thresholds.**
 
+### Fuel (1)
+
+| Column | Unit | Range | Meaning |
+|---|---|---|---|
+| `days_since_last_fire` | days | 5 – 9999 | since this cell last burned; `9999` = never burned in the record |
+
+The single most important feature — **26% of model gain**, and worth +20% PR-AUC
+over the weather features alone. Burned ground does not reburn for months, and
+nothing in the weather knows that.
+
+⚠️ **It carries a mandatory lag of `temporal_buffer_days + 1` = 4 days**, which is
+why the minimum is 5 rather than 0. Without the lag it encodes the sampling design
+instead of fire behaviour: negatives sit at least 4 days from any fire, while a
+positive inside a multi-day fire sits 1–3 days after the previous one, so every
+value below 4 would be 100% positive — 8,365 rows, 27.6% of all positives. That
+version scored 0.688 on pure artefact.
+
+If you recompute this feature from your own fire data, apply the same lag.
+[test_features_fuel.py](../tests/test_features_fuel.py) fails if it is removed.
+
 ### Split (1)
 
 | Column | Type | Values |
@@ -169,33 +189,45 @@ Things that will silently break the dataset's guarantees if changed:
 | Splits by year | one fire spans days; random split leaks it across folds | `cfg.splits` |
 | Rolling windows backward-only | a window that sees the future is not available at serving time | [features.py:58](../src/firerisk/features.py#L58) |
 
-### Not stored in the file
+### Everything the model needs is in the file
 
-`days_since_last_fire` is a model feature but is **not** a column here. It is
-computed at load time because it needs the raw FIRMS detections, and storing it
-would freeze into the parquet the sampling buffer it depends on.
+All 21 model features are stored columns. Read the parquet directly:
 
-Load through `load_dataset()` in [notebooks/00_setup.py](../notebooks/00_setup.py)
-rather than reading the parquet directly, so the feature is always derived with
-the correct lag:
+```python
+import pandas as pd
+d = pd.read_parquet("data/processed/dataset.parquet")
+```
+
+or through `load_dataset()` in [notebooks/00_setup.py](../notebooks/00_setup.py),
+which adds a guard against a near-constant fuel column and resolves paths from
+the repo root:
 
 ```python
 from importlib import import_module
 setup = import_module("00_setup")     # with notebooks/ on sys.path
-d = setup.load_dataset()              # 21 features, fuel feature included
-FEATURES = setup.FEATURES
+d = setup.load_dataset()
+FEATURES = setup.FEATURES             # 21
 ```
-
-`load_dataset` raises if the FIRMS detections are missing rather than returning
-a frame with a constant feature. That guard exists because
-`firms.load_detections` returns an **empty** frame for an absent directory,
-which once silently reduced the best feature to a constant and made every model
-score identically — with no error anywhere.
 
 | Feature set | Features | PR-AUC |
 |---|---|---|
-| `BASE_FEATURES` | 20 (the columns above) | 0.4594 ±0.076 |
+| `BASE_FEATURES` | 20 (weather + FWI) | 0.4594 ±0.076 |
 | `MODEL_FEATURES` | 21 (+ `days_since_last_fire`) | 0.5514 ±0.074 (0.5594 tuned) |
+
+`days_since_last_fire` derives from `temporal_buffer_days`, so `build.py` records
+that buffer in the parquet's own metadata — a mismatch between the stored column
+and the buffer the rows were sampled under is then detectable rather than silent:
+
+```python
+import pyarrow.parquet as pq
+pq.read_schema("data/processed/dataset.parquet").metadata[b"temporal_buffer_days"]
+# b'3'
+```
+
+Earlier versions of this file omitted the column and left every consumer to
+recompute it. That made the dataset unusable on its own — the feature carrying
+26% of model gain could not be derived without the raw FIRMS detections, which
+are not distributed here.
 
 ---
 
@@ -218,6 +250,40 @@ score identically — with no error anywhere.
    test metrics describe fire-prone land rather than arbitrary terrain.
 5. Ignition cause is absent. Most Algerian wildfires are human-caused; this models
    fire-conducive *conditions*, not human behaviour.
+6. **The study area is a bounding box, not a national border.** Cells come from
+   `bbox: [-2.5, 34.0, 9.0, 37.2]`, centred on northern Algeria but clipping into
+   neighbouring territory. See below.
+
+### The study area crosses borders
+
+`bbox` is a rectangle, so the cell universe is not exactly Algeria:
+
+| Group | Cells | Extent |
+|---|---|---|
+| Almería, **Spain** | 16 | lat 36.8–37.2, lon −2.5 to −1.9 — isolated across the Mediterranean |
+| Western edge (partly **Morocco**) | 57 | lat 34.1–35.2, lon −2.5 to −1.6 |
+| Eastern edge (partly **Tunisia**) | 92 | lat 34.3–37.0, lon ≥ 8.5 |
+
+Only the Spanish group is unambiguous — the sea separates it. The western and
+eastern groups are contiguous with Algerian land and straddle borders that do not
+follow lines of longitude, so the exact split is not determined here. Together the
+three groups are ~12% of cells.
+
+The Spanish cells are 427 rows (0.35%) with an identical positive rate (24.8% vs
+24.9% elsewhere), but a measurably different climate — their fire days average
+27.3 °C max temperature and 38.0% minimum RH, against 32.6 °C and 26.5% for
+Algerian fire days, with FWI 17.6% lower. A cooler, wetter fire regime.
+
+**This does not create leakage.** Negatives are matched within the same cell, so a
+Moroccan cell is only ever compared with itself. The effect is a wider study area
+than the name suggests, not a contaminated label. The Maghreb fire regime is also
+broadly continuous across the Algeria–Morocco and Algeria–Tunisia borders; Almería
+is the one genuinely distinct group.
+
+Filtering to true national boundaries would need a country-polygon source
+(e.g. Natural Earth admin-0). It can be applied at the assemble stage, which leaves
+the cell universe — and therefore the cached weather, indexed by position within it
+— untouched.
 
 ---
 
