@@ -1,8 +1,13 @@
 pandas==2.3.3
+numpy==2.3.5
 pyarrow==22.0.0
 requests==2.32.3
 PyYAML==6.0.2
 python-dotenv==1.0.1
 scikit-learn==1.7.2
+lightgbm==4.6.0
 xgboost==3.2.0
+joblib==1.5.2
+matplotlib==3.10.8
+jupyter==1.1.1
 pytest==8.3.3

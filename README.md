@@ -15,7 +15,6 @@ The comparable public dataset — UCI "Algerian Forest Fires" — has 244 rows f
 regions in one summer. This one covers every fire season since VIIRS came online.
 
 **Documentation:** [dataset dictionary](docs/DATASET.md) ·
-[design spec](docs/superpowers/specs/2026-08-12-algeria-wildfire-risk-dataset-design.md) ·
 [modelling notebooks](notebooks/)
 
 ---
@@ -200,7 +199,7 @@ notebooks/        all modelling
 scripts/          operational entry points
 artifacts/        model.joblib + metrics.json (threshold and base rates live here)
 data/sample/      3,600 committed rows — explore without an API key
-docs/             design spec and implementation plan
+docs/             dataset dictionary
 tests/            68 tests, none touching the network
 ```
 
@@ -284,7 +283,7 @@ management.
 ## Status
 
 Complete: dataset pipeline, modelling, calibrated artifact.
-Planned: FastAPI service (design in `docs/superpowers/plans/`), Flutter app.
+Planned: FastAPI service, Flutter app.
 
 Highest-value next step is vegetation state — NDVI and NDMI — which is the one information
 gap the ablations above could not close.
