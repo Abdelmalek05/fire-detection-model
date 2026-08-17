@@ -172,23 +172,30 @@ Things that will silently break the dataset's guarantees if changed:
 ### Not stored in the file
 
 `days_since_last_fire` is a model feature but is **not** a column here. It is
-computed at load time by [datasets.py](../src/firerisk/modeling/datasets.py),
-because it needs the raw FIRMS detections and storing it would freeze the
-sampling buffer it depends on into the parquet.
+computed at load time because it needs the raw FIRMS detections, and storing it
+would freeze into the parquet the sampling buffer it depends on.
 
-Always load through `load_modeling_frame()` rather than reading the parquet
-directly, so training and serving cannot drift:
+Load through `load_dataset()` in [notebooks/00_setup.py](../notebooks/00_setup.py)
+rather than reading the parquet directly, so the feature is always derived with
+the correct lag:
 
 ```python
-from firerisk.modeling.datasets import load_modeling_frame, xy
-d, feats = load_modeling_frame(cfg, feature_set="model")   # 21 features
-X, y, groups = xy(d, feats)
+from importlib import import_module
+setup = import_module("00_setup")     # with notebooks/ on sys.path
+d = setup.load_dataset()              # 21 features, fuel feature included
+FEATURES = setup.FEATURES
 ```
+
+`load_dataset` raises if the FIRMS detections are missing rather than returning
+a frame with a constant feature. That guard exists because
+`firms.load_detections` returns an **empty** frame for an absent directory,
+which once silently reduced the best feature to a constant and made every model
+score identically — with no error anywhere.
 
 | Feature set | Features | PR-AUC |
 |---|---|---|
-| `base` | 20 (the columns above) | 0.458 |
-| `model` | 21 (+ `days_since_last_fire`) | 0.550 (0.560 tuned) |
+| `BASE_FEATURES` | 20 (the columns above) | 0.4594 ±0.076 |
+| `MODEL_FEATURES` | 21 (+ `days_since_last_fire`) | 0.5514 ±0.074 (0.5594 tuned) |
 
 ---
 
