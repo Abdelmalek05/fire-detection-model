@@ -14,6 +14,9 @@ PR-AUC 0.559 · ROC-AUC 0.781 · recall 0.810 at threshold 0.18
 The comparable public dataset — UCI "Algerian Forest Fires" — has 244 rows from two
 regions in one summer. This one covers every fire season since VIIRS came online.
 
+**Download the dataset:** [on Kaggle](https://www.kaggle.com/datasets/abdelmaleknedjar/algeria-wildfire-risk-121k-labelled-cell-days) — all 121,869 rows, no API key needed.
+Also attached to [the latest release](../../releases/latest).
+
 **Documentation:** [dataset dictionary](docs/DATASET.md) ·
 [modelling notebooks](notebooks/)
 

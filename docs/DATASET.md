@@ -9,6 +9,8 @@ d = pd.read_parquet("data/processed/dataset.parquet")
 d.to_csv("dataset.csv", index=False)   # if you want it in Excel
 ```
 
+Published on Kaggle as CSV and Parquet: https://www.kaggle.com/datasets/abdelmaleknedjar/algeria-wildfire-risk-121k-labelled-cell-days
+
 ---
 
 ## Shape
