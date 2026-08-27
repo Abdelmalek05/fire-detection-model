@@ -1,9 +1,9 @@
 121,869 labelled `(0.1° cell, day)` rows for northern Algeria, built from **NASA FIRMS**
-satellite fire detections and **Open-Meteo** ERA5-Land reanalysis weather across
-14 fire seasons (2012–2025).
+satellite fire detections, **Open-Meteo** ERA5-Land reanalysis weather, and **MODIS**
+vegetation indices across 14 fire seasons (2012–2025).
 
 This is not a scraped CSV — it is a sampled panel with a deliberate design, and the
-design is the point. Please read the three warnings below before modelling.
+design is the point. Please read the four warnings below before modelling.
 
 ---
 
@@ -18,9 +18,13 @@ design is the point. Please read the three warnings below before modelling.
 | `max_frp` | `NaN` for all 91,518 negatives |
 
 Any one of them alone gives PR-AUC 1.0. They exist for analysis (how big was the fire?)
-and only have values *because* a fire happened. Use the **21 model features** —
-20 weather/FWI columns plus `days_since_last_fire`. A realistic honest score is
-**PR-AUC ≈ 0.46–0.56**.
+and only have values *because* a fire happened. Use the **26 model features** listed
+below. A realistic honest score is **PR-AUC ≈ 0.46–0.58**.
+
+**⚠️ Do not build the feature list by exclusion.** Two columns are traps in opposite
+directions: `doy` looks like bookkeeping but **is** a model feature, and `ndvi_anomaly`
+looks like a feature but is **not** trained on (see warning 4). Getting both wrong still
+yields 26 columns, so the count looks right while the set is not. List them explicitly.
 
 **2. The 24.9% positive rate is not the real fire rate.**
 
@@ -35,6 +39,24 @@ VIIRS cannot see through cloud, and cloudy days are systematically both wetter *
 observable. Part of any learned "rain → no fire" relationship is satellite blindness
 rather than fire physics. No sampling scheme fixes this. It is the most important caveat
 on any result from this data.
+
+**4. For vegetation, use the raw level — not the anomaly.**
+
+This is counter-intuitive and was measured the hard way. Measured on this data:
+
+| Feature | Δ PR-AUC |
+|---|---|
+| `ndvi_anomaly` alone | **−0.0009** (nothing) |
+| `ndvi` raw level | **+0.0128** (12/14 folds, p = 0.0007) |
+
+`ndvi_normal` is a **fuel-type signature** — scrub sits near 0.25, oak forest near 0.65,
+and they need very different amounts of drying before they burn. Fuel type has no *main*
+effect here (matched sampling removed that) but it **interacts** with weather, and
+subtracting the norm deletes exactly that interaction.
+
+The generalisable lesson: *"no main effect"* does not mean *"useless"*. It means look for
+the interactions. `ndvi_anomaly` is shipped so you can reproduce the comparison; it is
+not in the trained feature set.
 
 ---
 
@@ -70,11 +92,12 @@ Grain is one `(cell_id, date)` pair — unique, zero duplicates.
 
 ---
 
-## Columns (32)
+## Columns (37)
 
 **Keys (6)** — `cell_id`, `lat`, `lon`, `date`, `year`, `doy`
 `lat`/`lon` are for mapping. Feeding them to a model hands back the geographic shortcut
-the sampling design removed.
+the sampling design removed. **`doy` is the exception — it IS a model feature** (+0.006
+PR-AUC, rank 3 by gain), because fire probability swings 4.3× across the season.
 
 **Label and provenance (4)** — `label`, `sample_kind`, `n_detections`, `max_frp`
 The last three are the leaks described above.
@@ -102,6 +125,21 @@ it the feature encodes the sampling design rather than fire behaviour — negati
 least 4 days from any fire, so every value below 4 would be 100% positive (8,365 rows,
 27.6% of all positives) and PR-AUC inflates to 0.688 on pure artefact. **If you recompute
 this from your own fire data, apply the same lag.**
+
+**Vegetation (5)** — `ndvi`, `ndvi_normal`, `ndvi_anomaly`, `ndvi_change_32d`,
+`ndvi_stale_days`
+From **MODIS MOD13Q1 v061** (250 m, 16-day composites), aggregated *server-side* in
+Google Earth Engine over each 0.1° cell polygon — about 1,660 pixels per cell.
+Point-sampling a cell centre would describe one hillside and call it the cell.
+`ndvi_normal` is that cell's average for the same 16-day slot over **2000–2011**, a
+baseline period deliberately disjoint from the modelling years so that no normal contains
+the fires being predicted.
+⚠️ A composite is used only once its 16-day window has **closed before** the label date —
+a fire destroys vegetation, so a window spanning the label date would carry the burn scar,
+which is the label in disguise. That is why `ndvi_stale_days` is never 0 (median 9).
+⚠️ Train on `ndvi`, not `ndvi_anomaly` — see warning 4 above.
+Missing on 0.05% of rows: four coastal cells that are ~95% sea, where MODIS masks the
+water and too few land pixels remain.
 
 **Split (1)** — `split`: `train` (2012–2023) / `val` (2024) / `test` (2025)
 
@@ -133,19 +171,31 @@ compare models only within the same split.
 5-fold CV grouped by year. Every one of these is reproducible from the columns in this
 file — nothing here depends on data that isn't distributed:
 
+Each rung adds one *kind* of information, not one column:
+
 | Features | PR-AUC | ROC-AUC |
 |---|---|---|
 | 20 weather + FWI | 0.4594 ±0.076 | 0.7356 |
 | + `days_since_last_fire` | 0.5514 ±0.074 | 0.7767 |
-| LightGBM tuned, all 21 | 0.5594 ±0.074 | 0.7814 |
+| + `doy` | 0.5545 ±0.084 | 0.7771 |
+| + vegetation (26) | 0.5700 ±0.092 | 0.7891 |
+| **LightGBM tuned, all 26** | **0.5787 ±0.089** | **0.7938** |
 
-LightGBM 0.5594, MLP(32) 0.5551, XGBoost 0.5494, RandomForest 0.5463 — a spread of 0.013
-against ±0.074 fold noise. Boosted trees, bagged trees and a neural network converging
-that tightly indicates an **information ceiling**, not an algorithmic one. If you want to
-beat it, add information (vegetation state / NDVI), not model capacity.
+LightGBM 0.5787, MLP(32) 0.5670, XGBoost 0.5664, RandomForest 0.5660 — a spread of 0.013
+against ±0.089 fold noise. Boosted trees, bagged trees and a neural network converging
+that tightly indicates an **information ceiling**, not an algorithmic one.
 
-Things already measured and found not to help: feature scaling (0.0004), class weighting
-(+0.001), undersampling to 50/50 (−0.002), predicting "fire within 3 days" (−0.06).
+Vegetation was the largest remaining gap and is now measured. It is real but small: held
+at the same 80% recall, deployed precision moves from about 1 alert in 52 to 1 in 50. The
+ceiling held against the lever most likely to break it.
+
+Things already measured and found not to help: NDVI **anomalies** instead of the raw
+level (−0.0009), feature scaling (0.0004), class weighting (+0.001), undersampling to
+50/50 (−0.002), predicting "fire within 3 days" (−0.06).
+
+Not yet tested: NDMI (moisture, MOD09A1), terrain–weather interactions, ignition proxies
+such as road or settlement distance, and sequence models over daily weather instead of
+hand-built rolling windows.
 
 ---
 
@@ -211,10 +261,17 @@ Released under **CC BY 4.0**. Please attribute:
 > We acknowledge the use of imagery from the NASA LANCE FIRMS
 > (https://earthdata.nasa.gov/firms), part of the NASA Earth Science Data and
 > Information System (ESDIS).
+>
+> Vegetation indices from MODIS/Terra MOD13Q1 v061, courtesy of the NASA Land Processes
+> Distributed Active Archive Center (LP DAAC), USGS/EROS, accessed through Google Earth
+> Engine.
 
 **This data has been modified from its sources.** FIRMS 375 m detection pixels are
 filtered to `type == 0` and collapsed to (0.1° cell, day) events; Open-Meteo hourly
 ERA5-Land values are reduced to daily aggregates, extended with rolling windows, and used
-to compute Canadian FWI components. Rows are a sampled panel, not a complete grid. Neither
-the raw detections nor the raw reanalysis are redistributed here. Neither NASA nor
-Open-Meteo endorses this work.
+to compute Canadian FWI components; MOD13Q1 NDVI is quality-masked (`SummaryQA <= 1`),
+averaged over each 0.1° cell polygon at 250 m, scaled by 0.0001, and differenced against
+a 2000–2011 per-cell seasonal normal. Rows are a sampled panel, not a complete grid.
+Neither the raw detections, the raw reanalysis, nor any MODIS imagery are redistributed
+here. MODIS land products carry no restrictions on subsequent use or redistribution.
+Neither NASA nor Open-Meteo endorses this work.
