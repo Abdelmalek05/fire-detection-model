@@ -23,3 +23,5 @@ __pycache__/
 .pytest_cache/
 CLAUDE.md
 /docs/superpowers
+# ~200 MB of MODIS exports; regenerable via scripts/fetch_ndvi.py
+data/raw/ndvi/
