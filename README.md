@@ -7,7 +7,7 @@ downloaded ready-made.
 **121,869 labelled cell-days · 14 fire seasons (2012–2025) · 1,423 grid cells · 6.06M weather readings**
 
 ```
-PR-AUC 0.559 · ROC-AUC 0.781 · recall 0.810 at threshold 0.18
+PR-AUC 0.578 · ROC-AUC 0.791 · recall 0.803 at threshold 0.19
 5-fold cross-validation grouped by year
 ```
 
@@ -27,62 +27,85 @@ Also attached to [the latest release](../../releases/latest).
 Five-fold cross-validation, **grouped by year**, threshold fitted on an inner held-out
 year and never on the fold being scored:
 
+Each rung adds one *kind* of information, not one column:
+
+| Features | PR-AUC | ROC-AUC | Precision | Recall | F1 |
+|---|---|---|---|---|---|
+| Weather + FWI only (20) | 0.4594 ±0.076 | 0.7356 | 0.374 | 0.770 | 0.502 |
+| + fuel depletion (21) | 0.5514 ±0.074 | 0.7767 | 0.465 | 0.653 | 0.536 |
+| + seasonality, `doy` (22) | 0.5545 ±0.084 | 0.7771 | 0.454 | 0.663 | 0.534 |
+| **+ vegetation, NDVI (26)** | **0.5700** ±0.092 | 0.7891 | 0.424 | 0.751 | 0.541 |
+
+And across model families, all on the full 26:
+
 | Model | PR-AUC | ROC-AUC | Precision | Recall | F1 |
 |---|---|---|---|---|---|
-| Weather features only | 0.4594 ±0.076 | 0.7356 | 0.374 | 0.770 | 0.502 |
-| **+ fuel depletion** | **0.5514** ±0.074 | 0.7767 | 0.465 | 0.653 | 0.536 |
-| LightGBM (tuned) | 0.5594 ±0.074 | 0.7814 | 0.450 | 0.693 | 0.537 |
-| MLP (32 hidden) | 0.5551 ±0.073 | 0.7772 | 0.451 | 0.674 | 0.538 |
-| XGBoost | 0.5494 ±0.073 | 0.7743 | 0.441 | 0.692 | 0.538 |
-| RandomForest | 0.5463 ±0.077 | 0.7725 | 0.463 | 0.640 | 0.534 |
-| ExtraTrees | 0.5130 ±0.089 | 0.7613 | 0.446 | 0.643 | 0.524 |
+| **LightGBM (tuned)** | **0.5787** ±0.089 | 0.7938 | 0.422 | 0.766 | 0.544 |
+| MLP (32 hidden) | 0.5670 ±0.083 | 0.7839 | 0.432 | 0.725 | 0.539 |
+| XGBoost | 0.5664 ±0.090 | 0.7865 | 0.410 | 0.783 | 0.536 |
+| RandomForest | 0.5660 ±0.094 | 0.7816 | 0.444 | 0.693 | 0.541 |
+| ExtraTrees | 0.5354 ±0.116 | 0.7705 | 0.408 | 0.758 | 0.523 |
 
-Against a 24.9% base rate, 0.559 is a **2.2× lift**.
+Against a 24.9% base rate, 0.578 is a **2.3× lift**.
 
-**Shipped model:** LightGBM at threshold 0.18 — recall **0.810**, precision 0.386,
-out-of-fold PR-AUC 0.558. Threshold, base rates and band edges are stored in
+**Shipped model:** LightGBM at threshold 0.19 — recall **0.803**, precision 0.403,
+out-of-fold PR-AUC 0.578. Threshold, base rates and band edges are stored in
 `artifacts/metrics.json` beside the model, because the model is unusable without them.
 
-### One feature carries the model
+### One feature still carries the model
 
 | Feature | Gain |
 |---|---|
-| `days_since_last_fire` | **26.0%** |
-| `dc` (Drought Code) | 10.8% |
-| `rh_mean` | 9.5% |
-| `fwi` | 8.2% |
-| `ffmc` | 5.3% |
+| `days_since_last_fire` | **21.9%** |
+| `rh_mean` | 8.5% |
+| `doy` | 7.2% |
+| `fwi` | 6.4% |
+| `dc` (Drought Code) | 5.6% |
+| `ndvi` + `ndvi_normal` | 10.7% combined |
 
-Twenty weather and fire-weather-index features reach 0.459. Adding one fuel-depletion
-feature — how long since this cell last burned — takes it to 0.551. Burned ground does
-not reburn for months, and nothing in the weather knows that.
+Twenty weather and fire-weather-index features reach 0.459. One fuel-depletion feature —
+how long since this cell last burned — takes it to 0.551. Burned ground does not reburn
+for months, and nothing in the weather knows that.
 
-### Every model family lands in the same place
+### Vegetation helps, and the way it helps was a surprise
 
-LightGBM 0.5594, MLP 0.5551, XGBoost 0.5494, RandomForest 0.5463 — a spread of 0.013
-against a fold standard deviation of ±0.074. Boosted trees, bagged trees and a neural
+MODIS NDVI adds **+0.0155** on top of that (0.5545 → 0.5700), confirmed on a
+pre-specified leave-one-year-out run: **+0.0128 PR-AUC, 12/14 folds, p = 0.0007**, and
+14/14 folds on ROC-AUC.
+
+The design expected *anomalies* to work — how far this cell departs from its own
+seasonal norm — reasoning that the matched sampling had already made cell identity
+useless. Measured, the anomaly alone was worth **−0.0009** and the **raw level** was
+worth +0.0128. The level is a fuel-type signature: scrub at 0.25 and oak forest at 0.65
+need different amounts of drying before they burn, and fuel type interacts with weather
+even where it has no main effect. Subtracting the norm deleted exactly that.
+
+### Every model family still lands in the same place
+
+LightGBM 0.5787, MLP 0.5670, XGBoost 0.5664, RandomForest 0.5660 — a spread of 0.013
+against a fold standard deviation of ±0.089. Boosted trees, bagged trees and a neural
 network failing *identically* is the signature of an **information ceiling**, not an
-algorithmic one. More model tuning is not the lever; vegetation data (NDVI) is.
+algorithmic one. NDVI raised the ceiling; it did not change its shape.
 
 ---
 
 ## Two numbers you cannot serve this model without
 
-**The threshold is 0.18, not 0.5.** Threshold choice alone moved F1 from 0.282 to 0.50
-with no change to the model. At the 0.5 default it misses two fires in three:
+**The threshold is 0.19, not 0.5.** Threshold choice alone moves F1 further than any
+model change in this project. At the 0.5 default it misses two fires in three:
 
 | Threshold | Precision | Recall | Fires missed | False alarms | Deployed precision |
 |---|---|---|---|---|---|
-| 0.10 | 0.319 | 0.935 | 1,966 | 60,507 | 0.014 |
-| **0.18** | **0.386** | **0.810** | **5,777** | **39,017** | **0.019** |
-| 0.25 | 0.449 | 0.690 | 9,416 | 25,648 | 0.024 |
-| 0.50 | 0.652 | 0.320 | 20,636 | 5,187 | 0.054 |
+| 0.15 | 0.369 | 0.870 | 3,944 | 45,193 | 0.017 |
+| **0.19** | **0.403** | **0.803** | **5,994** | **36,088** | **0.020** |
+| 0.25 | 0.459 | 0.695 | 9,270 | 24,868 | 0.025 |
+| 0.50 | 0.663 | 0.344 | 19,916 | 5,308 | 0.056 |
 
 **Probabilities need base-rate correction before display.** Training is 1:3 by
 construction; real fire-days are ~1 in 100 eligible cell-days in season. Raw
 probabilities are on the sampled scale and read as alarming everywhere.
 
-That last column is the honest one: at the operating point roughly **1 alert in 53** is a
+That last column is the honest one: at the operating point roughly **1 alert in 50** is a
 real fire. Precision measured on sampled data is optimistic; recall is not, because recall
 only involves actual fires.
 
@@ -91,12 +114,12 @@ probabilities compress into ~0–0.11, and "Extreme > 0.5" would never fire:
 
 | Band | Fire rate |
 |---|---|
-| Low (<1× base rate) | 12.5% |
-| Moderate (1–3×) | 35.5% |
-| High (3–8×) | 60.7% |
-| **Extreme (>8×)** | **81.4%** |
+| Low (<1× base rate) | 12.2% |
+| Moderate (1–3×) | 35.3% |
+| High (3–8×) | 60.5% |
+| **Extreme (>8×)** | **81.5%** |
 
-A monotone 12.5% → 81.4% climb. For an application that ranks *where attention should go
+A monotone 12.2% → 81.5% climb. For an application that ranks *where attention should go
 today*, this ranking is the product — not the raw probability.
 
 ---
@@ -140,6 +163,7 @@ contains fragments of the same multi-day fires.
 | Feature scaling for LightGBM | **0.0004** spread across raw/Standard/MinMax/Quantile — trees are invariant |
 | `class_weight="balanced"` | 0.5594 → 0.5606 — inside noise |
 | Undersampling to 50/50 | 0.5594 → 0.5570 — discards half the negatives, gains nothing |
+| NDVI **anomalies** instead of the raw level | **−0.0009** — subtracting each cell's seasonal norm deletes the fuel-type signal that makes NDVI useful |
 
 The balancing experiment carries its own lesson. Trained on balanced data and scored on
 **balanced** folds, the same model reports **0.7746** — because the PR-AUC baseline moved
@@ -287,16 +311,26 @@ management.
 
 ## Status
 
-Complete: dataset pipeline, modelling, calibrated artifact.
+Complete: dataset pipeline, modelling, calibrated artifact, MODIS NDVI ingest.
 Planned: FastAPI service, Flutter app.
 
-Highest-value next step is vegetation state — NDVI and NDMI — which is the one information
-gap the ablations above could not close.
+Vegetation state was the largest remaining information gap and is now measured and
+closed. It is real (+0.0128 PR-AUC, 12/14 leave-one-year-out folds, p = 0.0007) and
+operationally small: held at the same 80% recall, deployed precision moves from 1 alert
+in 52 to 1 in 50. The information ceiling held against the lever most likely to break it.
+
+NDMI (moisture, from MOD09A1) is the obvious follow-up and reuses this pipeline, but the
+NDVI result sets a low prior on it.
 
 ## Data sources
 
 - **NASA FIRMS** — https://firms.modaps.eosdis.nasa.gov/api/ (VIIRS SNPP, archive from 2012-01-20)
 - **Open-Meteo Archive** — https://archive-api.open-meteo.com/v1/archive (ERA5-Land)
+- **MODIS MOD13Q1 v061** — NDVI, 250 m, 16-day, via Google Earth Engine (LP DAAC, from 2000)
+
+Rebuilding the vegetation features needs a free Earth Engine account
+(`scripts/fetch_ndvi.py`). Everything else needs only a FIRMS key, and the build
+skips NDVI cleanly when `data/interim/ndvi.parquet` is absent.
 
 ## License
 

@@ -27,7 +27,8 @@ if str(ROOT / "src") not in sys.path:
 
 from firerisk.config import load_config  # noqa: E402
 from firerisk.features import (  # noqa: E402
-    BASE_FEATURES, FUEL_FEATURES, MODEL_FEATURES,
+    BASE_FEATURES, FUEL_FEATURES, MODEL_FEATURES, NDVI_FEATURES,
+    TRAINING_FEATURES,
 )
 
 import dataclasses  # noqa: E402
@@ -41,7 +42,10 @@ import dataclasses  # noqa: E402
 CFG = dataclasses.replace(
     load_config(ROOT / "config" / "config.yaml"), data_dir=ROOT / "data"
 )
-FEATURES = MODEL_FEATURES
+# What the model trains on: the 21 stored weather/fuel features, plus doy and
+# the vegetation block. MODEL_FEATURES stays available for the ablations that
+# compare against it.
+FEATURES = TRAINING_FEATURES
 
 
 def load_dataset(with_fuel=True):
