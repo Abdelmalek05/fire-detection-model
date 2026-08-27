@@ -20,7 +20,12 @@
     "isi",
     "bui",
     "fwi",
-    "days_since_last_fire"
+    "days_since_last_fire",
+    "doy",
+    "ndvi",
+    "ndvi_normal",
+    "ndvi_change_32d",
+    "ndvi_stale_days"
   ],
   "n_rows": 121869,
   "years": [
@@ -29,7 +34,7 @@
   ],
   "sampled_base_rate": 0.24904610688526205,
   "real_base_rate": 0.009957461551029407,
-  "threshold": 0.18000000000000002,
+  "threshold": 0.19,
   "target_recall": 0.8,
   "risk_multiples": [
     [
@@ -53,12 +58,12 @@
       "Extreme"
     ]
   ],
-  "oof_pr_auc": 0.5580219062826224,
-  "oof_roc_auc": 0.778997254446454,
+  "oof_pr_auc": 0.5775344548477807,
+  "oof_roc_auc": 0.7906005893765036,
   "at_operating_point": {
-    "precision": 0.38643833246843107,
-    "recall": 0.8096603077328589,
-    "f1": 0.5231738732409359
+    "precision": 0.40296136984035075,
+    "recall": 0.8025106256795492,
+    "f1": 0.5365214326622318
   },
   "params": {
     "objective": "binary",

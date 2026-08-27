@@ -28,6 +28,18 @@ FUEL_FEATURES = ["days_since_last_fire"]
 
 MODEL_FEATURES = BASE_FEATURES + FUEL_FEATURES
 
+# Vegetation state from MOD13Q1. The LEVEL is what earns its place: +0.0128
+# PR-AUC over 12/14 leave-one-year-out folds. The anomaly alone measured
+# -0.0009 - subtracting each cell's normal deletes the fuel-type signature
+# that makes the level useful, since scrub and oak forest need different
+# amounts of drying before they burn.
+NDVI_FEATURES = ["ndvi", "ndvi_normal", "ndvi_change_32d", "ndvi_stale_days"]
+
+# What the model trains on, as distinct from what the parquet stores. doy is
+# already written as a key column, so appending it to MODEL_FEATURES would
+# make assemble() write it to the file twice.
+TRAINING_FEATURES = MODEL_FEATURES + ["doy"] + NDVI_FEATURES
+
 NEVER_BURNED = 9999.0  # sentinel: no qualifying fire before this row
 
 

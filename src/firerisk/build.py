@@ -80,12 +80,45 @@ def main(argv=None):
                 "missing or empty - refusing to write a dataset whose best "
                 "feature carries no signal."
             )
+        dataset = _attach_ndvi(dataset, Path(cfg.data_dir))
         out = processed / "dataset.parquet"
         _write_dataset(dataset, out, cfg.temporal_buffer_days)
         print(f"      dataset rows: {len(dataset)}  ->  {out}")
         print(dataset.groupby(["split", "label"]).size().to_string())
 
     return 0
+
+
+def _attach_ndvi(dataset, data_dir):
+    """Join vegetation state, if it has been fetched.
+
+    Optional on purpose: NDVI needs an Earth Engine account and 26 exports,
+    where the rest of the pipeline needs only a FIRMS key. A clone without it
+    still builds - with four fewer features and a loud line saying so, rather
+    than a confusing failure.
+    """
+    path = data_dir / "interim" / "ndvi.parquet"
+    if not path.exists():
+        print(f"      no {path} - building WITHOUT vegetation features. "
+              "Run scripts/fetch_ndvi.py to include them.")
+        return dataset
+
+    from . import ndvi as ndvi_mod
+
+    raw = pd.read_parquet(path)
+    veg = ndvi_mod.with_anomalies(raw, ndvi_mod.climatology(raw))
+
+    before = len(dataset)
+    out = ndvi_mod.attach(dataset, veg)
+    if len(out) != before:
+        raise SystemExit(
+            f"the NDVI join changed the row count ({before:,} -> {len(out):,}). "
+            "It must be a left join on the panel; a merge_asof that dropped "
+            "rows would shrink the dataset with nothing but the count to show it."
+        )
+    print(f"      NDVI attached, {out.ndvi.isna().mean() * 100:.2f}% missing "
+          f"(coastal cells are mostly sea and get masked)")
+    return out
 
 
 def _write_dataset(df, path, buffer_days):

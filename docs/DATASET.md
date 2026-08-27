@@ -18,7 +18,7 @@ Published on Kaggle as CSV and Parquet: https://www.kaggle.com/datasets/abdelmal
 | | |
 |---|---|
 | Rows | **121,869** |
-| Columns | **32** (21 model features + 11 keys, labels and bookkeeping) |
+| Columns | **37** (26 model features + 11 keys, labels and bookkeeping) |
 | File size | 9.8 MB on disk (~48 MB in memory) |
 | Grain | one **(cell, date)** pair — unique, 0 duplicates |
 | Cells | 1,423 distinct 0.1° squares (~11 km) |
@@ -118,7 +118,7 @@ published FWI thresholds.**
 |---|---|---|---|
 | `days_since_last_fire` | days | 5 – 9999 | since this cell last burned; `9999` = never burned in the record |
 
-The single most important feature — **26% of model gain**, and worth +20% PR-AUC
+The single most important feature — **22% of model gain**, and worth +20% PR-AUC
 over the weather features alone. Burned ground does not reburn for months, and
 nothing in the weather knows that.
 
@@ -131,6 +131,40 @@ version scored 0.688 on pure artefact.
 
 If you recompute this feature from your own fire data, apply the same lag.
 [test_features_fuel.py](../tests/test_features_fuel.py) fails if it is removed.
+
+### Vegetation (5)
+
+From **MODIS MOD13Q1** (NDVI, 250 m, 16-day composites), aggregated *server-side* in
+Google Earth Engine over each 0.1° cell polygon — roughly 1,660 pixels per cell.
+Point-sampling a cell centre would describe one hillside and call it the cell.
+
+| Column | Unit | Range | Meaning |
+|---|---|---|---|
+| `ndvi` | index | 0.06 – 0.85 | greenness of the cell, most recent usable composite |
+| `ndvi_normal` | index | 0.07 – 0.79 | that cell's average for this 16-day slot over 2000–2011 |
+| `ndvi_anomaly` | index | −0.38 – 0.29 | `ndvi − ndvi_normal` |
+| `ndvi_change_32d` | index | −0.41 – 0.24 | change over the previous two composites |
+| `ndvi_stale_days` | days | 1 – 365 | age of the observation at the label date |
+
+⚠️ **A composite is used only once its 16-day window has CLOSED before the label date.**
+A fire destroys vegetation, so a window spanning the label date would carry the burn
+scar — the label wearing a disguise. This is why `ndvi_stale_days` is never 0: the
+freshest possible observation is one day old, the median is 9.
+
+⚠️ **Train on `ndvi`, not `ndvi_anomaly`.** This is counter-intuitive and was measured
+the hard way. The anomaly alone is worth **−0.0009** PR-AUC; the raw level is worth
+**+0.0128** (12/14 leave-one-year-out folds, p = 0.0007). The level is a fuel-type
+signature — scrub at 0.25 and oak forest at 0.65 need different amounts of drying
+before they burn — and fuel type interacts with weather even though matched sampling
+gives it no main effect. Subtracting the norm deletes precisely that. `ndvi_anomaly`
+is stored so the ablation is reproducible, not because the model reads it.
+
+Climatological normals come from **2000–2011 only**, disjoint from the 2012–2025
+modelling years. A normal averaged over all years would contain the very fires being
+predicted and would dampen the departures that matter most.
+
+`ndvi` is missing on 0.05% of rows: four coastal cells that are ~95% sea, where MODIS
+masks the water and too few land pixels remain.
 
 ### Split (1)
 
@@ -193,7 +227,7 @@ Things that will silently break the dataset's guarantees if changed:
 
 ### Everything the model needs is in the file
 
-All 21 model features are stored columns. Read the parquet directly:
+All 26 model features are stored columns. Read the parquet directly:
 
 ```python
 import pandas as pd
@@ -208,13 +242,20 @@ the repo root:
 from importlib import import_module
 setup = import_module("00_setup")     # with notebooks/ on sys.path
 d = setup.load_dataset()
-FEATURES = setup.FEATURES             # 21
+FEATURES = setup.FEATURES             # 26 = TRAINING_FEATURES
 ```
 
 | Feature set | Features | PR-AUC |
 |---|---|---|
 | `BASE_FEATURES` | 20 (weather + FWI) | 0.4594 ±0.076 |
-| `MODEL_FEATURES` | 21 (+ `days_since_last_fire`) | 0.5514 ±0.074 (0.5594 tuned) |
+| `MODEL_FEATURES` | 21 (+ `days_since_last_fire`) | 0.5514 ±0.074 |
+| + `doy` | 22 | 0.5545 ±0.084 |
+| `TRAINING_FEATURES` | 26 (+ vegetation) | 0.5700 ±0.092 (0.5787 tuned) |
+
+`MODEL_FEATURES` is what the parquet *stores* as features; `TRAINING_FEATURES` is what
+the model *reads*. They differ because `doy` is already written as a key column —
+appending it to the stored list would put it in the file twice — and because
+`ndvi_anomaly` is stored but deliberately not trained on.
 
 `days_since_last_fire` derives from `temporal_buffer_days`, so `build.py` records
 that buffer in the parquet's own metadata — a mismatch between the stored column
@@ -303,13 +344,18 @@ matching the licence of its weather source.
 > We acknowledge the use of imagery from the NASA LANCE FIRMS
 > (https://earthdata.nasa.gov/firms), part of the NASA Earth Science Data and
 > Information System (ESDIS).
+>
+> Vegetation indices from MODIS/Terra MOD13Q1 v061, courtesy of the NASA Land
+> Processes Distributed Active Archive Center (LP DAAC), USGS/EROS, accessed
+> through Google Earth Engine.
 
 Open-Meteo's data is CC BY 4.0, which permits redistribution and adaptation with
 credit, a link to the licence, and a statement of changes. Their free API tier is
 separately limited to non-commercial use — that condition governs *making the API
 calls*, not the resulting data. NASA promotes full and open sharing of FIRMS data
 with no period of exclusive access; the citation above is requested rather than
-required.
+required. MODIS land products carry no restrictions on subsequent use, sale or
+redistribution, and LP DAAC likewise requests rather than requires citation.
 
 ### Changes made to the source data
 
@@ -321,6 +367,10 @@ CC BY 4.0 requires stating that the material was modified. It was:
 - Open-Meteo hourly ERA5-Land values are reduced to daily aggregates, extended
   with backward-looking rolling windows, and used to compute Canadian FWI
   components.
+- MOD13Q1 NDVI is quality-masked (`SummaryQA <= 1`), averaged over each 0.1° cell
+  polygon at 250 m, scaled by 0.0001, and differenced against a 2000–2011
+  per-cell seasonal normal. Composites whose 16-day window had not closed before
+  the label date are excluded. No MODIS imagery is redistributed here.
 - Rows are a **sampled panel**, not a complete grid: every qualifying positive
   plus three matched negatives per positive, drawn from the same cell on
   different days.
